@@ -1,9 +1,13 @@
-import { initialRecipes } from "./data.js";
-import { loadRecipes, saveRecipes } from "./storage.js";
+import { fetchRecipes } from "./api.js";
+import { assertNever, errorMessage } from "./state.js";
 import { addReview, createRecipe, deleteRecipe, filterRecipes, isValidImageUrl, toggleFavorite, toggleReviewLike, updateRecipe, } from "./recipes.js";
-import { searchInput, categoryFilter, favoritesOnly, recipeForm, recipeList, formMessage, renderRecipes, recipeFormTitle, min30Only, cookingTimeSort, clearFiltersButton, recipeTitleInput, recipeCategoryInput, recipeServingsInput, recipeTimeInput, recipeIngredientsInput, recipeInstructionsInput, recipeImageInput, cancelEditButton, recipeSubmitButton, updateCategoryCounts, } from "./ui.js";
-let recipes = loadRecipes() ?? initialRecipes;
+import { searchInput, categoryFilter, favoritesOnly, recipeForm, recipeList, formMessage, renderRecipes, renderMessage, recipeFormTitle, min30Only, cookingTimeSort, clearFiltersButton, recipeTitleInput, recipeCategoryInput, recipeServingsInput, recipeTimeInput, recipeIngredientsInput, recipeInstructionsInput, recipeImageInput, cancelEditButton, recipeSubmitButton, updateCategoryCounts, } from "./ui.js";
+let state = { status: "loading" };
 let editingRecipeId = null;
+function setState(next) {
+    state = next;
+    render();
+}
 function getFilter() {
     return {
         query: searchInput.value,
@@ -14,12 +18,25 @@ function getFilter() {
     };
 }
 function render() {
-    updateCategoryCounts(recipes);
-    renderRecipes(filterRecipes(recipes, getFilter()));
+    switch (state.status) {
+        case "loading":
+            renderMessage("Загружаем рецепты...");
+            break;
+        case "error":
+            renderMessage(`Не удалось загрузить: ${state.message}`);
+            break;
+        case "success":
+            updateCategoryCounts(state.recipes);
+            renderRecipes(filterRecipes(state.recipes, getFilter()));
+            break;
+        default:
+            assertNever(state);
+    }
 }
-function persistAndRender() {
-    saveRecipes(recipes);
-    render();
+function updateRecipesState(updater) {
+    if (state.status !== "success")
+        return;
+    setState({ status: "success", recipes: updater(state.recipes) });
 }
 searchInput.addEventListener("input", render);
 categoryFilter.addEventListener("change", render);
@@ -42,7 +59,9 @@ function resetForm() {
     cancelEditButton.hidden = true;
 }
 function editRecipe(id) {
-    const recipe = recipes.find((item) => item.id === id);
+    if (state.status !== "success")
+        return;
+    const recipe = state.recipes.find((item) => item.id === id);
     if (!recipe)
         return;
     editingRecipeId = id;
@@ -64,6 +83,8 @@ cancelEditButton.addEventListener("click", () => {
     formMessage.textContent = "Редактирование отменено.";
 });
 recipeList.addEventListener("click", (event) => {
+    if (state.status !== "success")
+        return;
     const target = event.target;
     if (!(target instanceof HTMLElement))
         return;
@@ -75,18 +96,18 @@ recipeList.addEventListener("click", (event) => {
     if (!id)
         return;
     if (action === "favorite") {
-        recipes = toggleFavorite(recipes, id);
+        updateRecipesState((recipes) => toggleFavorite(recipes, id));
     }
     else if (action === "like-review") {
         const reviewId = button.dataset.reviewId;
         if (!reviewId)
             return;
-        recipes = toggleReviewLike(recipes, id, reviewId);
+        updateRecipesState((recipes) => toggleReviewLike(recipes, id, reviewId));
     }
     else if (action === "delete") {
         if (!window.confirm("Удалить этот рецепт?"))
             return;
-        recipes = deleteRecipe(recipes, id);
+        updateRecipesState((recipes) => deleteRecipe(recipes, id));
         if (editingRecipeId === id) {
             resetForm();
             formMessage.textContent = "Рецепт удален.";
@@ -94,14 +115,11 @@ recipeList.addEventListener("click", (event) => {
     }
     else if (action === "edit") {
         editRecipe(id);
-        return;
     }
-    else {
-        return;
-    }
-    persistAndRender();
 });
 recipeList.addEventListener("submit", (event) => {
+    if (state.status !== "success")
+        return;
     const target = event.target;
     if (!(target instanceof HTMLFormElement) || !target.dataset.recipeId)
         return;
@@ -119,11 +137,13 @@ recipeList.addEventListener("submit", (event) => {
         message.textContent = "Укажите имя и текст отзыва.";
         return;
     }
-    recipes = addReview(recipes, target.dataset.recipeId, author.trim(), text.trim());
-    persistAndRender();
+    const recipeId = target.dataset.recipeId;
+    updateRecipesState((recipes) => addReview(recipes, recipeId, author.trim(), text.trim()));
 });
 recipeForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (state.status !== "success")
+        return;
     const title = recipeTitleInput.value.trim();
     const servings = Number(recipeServingsInput.value);
     const cookingTime = Number(recipeTimeInput.value);
@@ -160,15 +180,25 @@ recipeForm.addEventListener("submit", (event) => {
         imageUrl,
     };
     if (editingRecipeId) {
-        recipes = updateRecipe(recipes, editingRecipeId, draft);
+        const currentId = editingRecipeId;
+        updateRecipesState((recipes) => updateRecipe(recipes, currentId, draft));
         formMessage.textContent = "Изменения сохранены.";
     }
     else {
-        recipes = [createRecipe(draft), ...recipes];
+        updateRecipesState((recipes) => [createRecipe(draft), ...recipes]);
         formMessage.textContent = "Рецепт добавлен.";
     }
     resetForm();
-    persistAndRender();
 });
-render();
+async function init() {
+    setState({ status: "loading" });
+    try {
+        const recipes = await fetchRecipes();
+        setState({ status: "success", recipes });
+    }
+    catch (error) {
+        setState({ status: "error", message: errorMessage(error) });
+    }
+}
+void init();
 //# sourceMappingURL=main.js.map

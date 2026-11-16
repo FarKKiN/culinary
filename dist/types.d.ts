@@ -26,4 +26,5 @@ export type RecipeFilter = {
     under30Only: boolean;
     sortByCookingTime: "none" | "ascending" | "descending";
 };
+export type NewRecipe = Omit<Recipe, "id">;
 //# sourceMappingURL=types.d.ts.map

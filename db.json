@@ -1,0 +1,40 @@
+{
+  "recipes": [
+    {
+      "id": "1",
+      "title": "Сырники",
+      "category": "Завтрак",
+      "servings": 4,
+      "cookingTime": 30,
+      "ingredients": ["Творог 500 г", "Яйцо 1 шт", "Мука 3 ст. л."],
+      "instructions": "Смешать, сформировать, обжарить.",
+      "favorite": false,
+      "imageUrl": "",
+      "reviews": []
+    },
+    {
+      "id": "2",
+      "title": "Борщ",
+      "category": "Обед",
+      "servings": 6,
+      "cookingTime": 90,
+      "ingredients": ["Свёкла 2 шт", "Капуста 300 г", "Картофель 3 шт", "Говядина 500 г"],
+      "instructions": "Сварить бульон, добавить овощи и тушёную свёклу, варить до готовности.",
+      "favorite": true,
+      "imageUrl": "",
+      "reviews": []
+    },
+    {
+      "id": "3",
+      "title": "Омлет с сыром",
+      "category": "Завтрак",
+      "servings": 2,
+      "cookingTime": 15,
+      "ingredients": ["Яйцо 3 шт", "Молоко 50 мл", "Сыр 50 г"],
+      "instructions": "Взбить яйца с молоком, вылить на сковороду, посыпать тёртым сыром.",
+      "favorite": false,
+      "imageUrl": "",
+      "reviews": []
+    }
+  ]
+}

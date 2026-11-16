@@ -1,6 +1,6 @@
 import type { Category, Recipe, RecipeDraft, RecipeFilter } from "./types.js";
-import { initialRecipes } from "./data.js";
-import { loadRecipes, saveRecipes } from "./storage.js";
+import { fetchRecipes } from "./api.js";
+import { assertNever, errorMessage, type LoadState } from "./state.js";
 import {
   addReview,
   createRecipe,
@@ -19,6 +19,7 @@ import {
   recipeList,
   formMessage,
   renderRecipes,
+  renderMessage,
   recipeFormTitle,
   min30Only,
   cookingTimeSort,
@@ -34,8 +35,15 @@ import {
   recipeSubmitButton,
   updateCategoryCounts,
 } from "./ui.js";
-let recipes: Recipe[] = loadRecipes() ?? initialRecipes;
+
+let state: LoadState = { status: "loading" };
 let editingRecipeId: string | null = null;
+
+function setState(next: LoadState): void {
+  state = next;
+  render();
+}
+
 function getFilter(): RecipeFilter {
   return {
     query: searchInput.value,
@@ -46,19 +54,35 @@ function getFilter(): RecipeFilter {
       cookingTimeSort.value as RecipeFilter["sortByCookingTime"],
   };
 }
+
 function render(): void {
-  updateCategoryCounts(recipes);
-  renderRecipes(filterRecipes(recipes, getFilter()));
+  switch (state.status) {
+    case "loading":
+      renderMessage("Загружаем рецепты...");
+      break;
+    case "error":
+      renderMessage(`Не удалось загрузить: ${state.message}`);
+      break;
+    case "success":
+      updateCategoryCounts(state.recipes);
+      renderRecipes(filterRecipes(state.recipes, getFilter()));
+      break;
+    default:
+      assertNever(state);
+  }
 }
-function persistAndRender(): void {
-  saveRecipes(recipes);
-  render();
+
+function updateRecipesState(updater: (current: Recipe[]) => Recipe[]): void {
+  if (state.status !== "success") return;
+  setState({ status: "success", recipes: updater(state.recipes) });
 }
+
 searchInput.addEventListener("input", render);
 categoryFilter.addEventListener("change", render);
 favoritesOnly.addEventListener("change", render);
 min30Only.addEventListener("change", render);
 cookingTimeSort.addEventListener("change", render);
+
 clearFiltersButton.addEventListener("click", () => {
   searchInput.value = "";
   categoryFilter.value = "Все";
@@ -77,7 +101,8 @@ function resetForm(): void {
 }
 
 function editRecipe(id: string): void {
-  const recipe = recipes.find((item) => item.id === id);
+  if (state.status !== "success") return;
+  const recipe = state.recipes.find((item) => item.id === id);
   if (!recipe) return;
   editingRecipeId = id;
   recipeFormTitle.textContent = "Редактировать рецепт";
@@ -98,7 +123,9 @@ cancelEditButton.addEventListener("click", () => {
   resetForm();
   formMessage.textContent = "Редактирование отменено.";
 });
+
 recipeList.addEventListener("click", (event: MouseEvent) => {
+  if (state.status !== "success") return;
   const target = event.target;
   if (!(target instanceof HTMLElement)) return;
   const button = target.closest<HTMLButtonElement>("button[data-action]");
@@ -106,28 +133,27 @@ recipeList.addEventListener("click", (event: MouseEvent) => {
   const id = button.dataset.id;
   const action = button.dataset.action;
   if (!id) return;
+
   if (action === "favorite") {
-    recipes = toggleFavorite(recipes, id);
+    updateRecipesState((recipes) => toggleFavorite(recipes, id));
   } else if (action === "like-review") {
     const reviewId = button.dataset.reviewId;
     if (!reviewId) return;
-    recipes = toggleReviewLike(recipes, id, reviewId);
+    updateRecipesState((recipes) => toggleReviewLike(recipes, id, reviewId));
   } else if (action === "delete") {
     if (!window.confirm("Удалить этот рецепт?")) return;
-    recipes = deleteRecipe(recipes, id);
+    updateRecipesState((recipes) => deleteRecipe(recipes, id));
     if (editingRecipeId === id) {
       resetForm();
       formMessage.textContent = "Рецепт удален.";
     }
   } else if (action === "edit") {
     editRecipe(id);
-    return;
-  } else {
-    return;
   }
-  persistAndRender();
 });
+
 recipeList.addEventListener("submit", (event: SubmitEvent) => {
+  if (state.status !== "success") return;
   const target = event.target;
   if (!(target instanceof HTMLFormElement) || !target.dataset.recipeId) return;
   event.preventDefault();
@@ -145,16 +171,15 @@ recipeList.addEventListener("submit", (event: SubmitEvent) => {
     message.textContent = "Укажите имя и текст отзыва.";
     return;
   }
-  recipes = addReview(
-    recipes,
-    target.dataset.recipeId,
-    author.trim(),
-    text.trim(),
+  const recipeId = target.dataset.recipeId;
+  updateRecipesState((recipes) =>
+    addReview(recipes, recipeId, author.trim(), text.trim()),
   );
-  persistAndRender();
 });
+
 recipeForm.addEventListener("submit", (event: SubmitEvent) => {
   event.preventDefault();
+  if (state.status !== "success") return;
   const title = recipeTitleInput.value.trim();
   const servings = Number(recipeServingsInput.value);
   const cookingTime = Number(recipeTimeInput.value);
@@ -164,6 +189,7 @@ recipeForm.addEventListener("submit", (event: SubmitEvent) => {
     .filter(Boolean);
   const instructions = recipeInstructionsInput.value.trim();
   const imageUrl = recipeImageInput.value.trim();
+
   if (!title || !instructions || ingredients.length === 0) {
     formMessage.textContent = "Заполните все поля формы.";
     return;
@@ -181,6 +207,7 @@ recipeForm.addEventListener("submit", (event: SubmitEvent) => {
     formMessage.textContent = "Время должно быть от 1 до 600 минут.";
     return;
   }
+
   const draft: RecipeDraft = {
     title,
     category: recipeCategoryInput.value as Category,
@@ -190,14 +217,26 @@ recipeForm.addEventListener("submit", (event: SubmitEvent) => {
     instructions,
     imageUrl,
   };
+
   if (editingRecipeId) {
-    recipes = updateRecipe(recipes, editingRecipeId, draft);
+    const currentId = editingRecipeId;
+    updateRecipesState((recipes) => updateRecipe(recipes, currentId, draft));
     formMessage.textContent = "Изменения сохранены.";
   } else {
-    recipes = [createRecipe(draft), ...recipes];
+    updateRecipesState((recipes) => [createRecipe(draft), ...recipes]);
     formMessage.textContent = "Рецепт добавлен.";
   }
   resetForm();
-  persistAndRender();
 });
-render();
+
+async function init(): Promise<void> {
+  setState({ status: "loading" });
+  try {
+    const recipes = await fetchRecipes();
+    setState({ status: "success", recipes });
+  } catch (error: unknown) {
+    setState({ status: "error", message: errorMessage(error) });
+  }
+}
+
+void init();

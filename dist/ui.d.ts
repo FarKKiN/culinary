@@ -21,4 +21,5 @@ export declare const recipeImageInput: HTMLInputElement;
 export declare const cancelEditButton: HTMLButtonElement;
 export declare function updateCategoryCounts(recipes: Recipe[]): void;
 export declare function renderRecipes(recipes: Recipe[]): void;
+export declare function renderMessage(text: string): void;
 //# sourceMappingURL=ui.d.ts.map
